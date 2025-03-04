@@ -27,6 +27,8 @@ source /opt/ros/humble/setup.zsh
 # cd /path/to/develop_ws/
 sudo rosdep install --from-paths src --ignore-src -r -y
 
+sudo apt-get install libusb-1.0-0-dev
+
 # ros2包的构建
 # cd /path/to/develop_ws/
 colcon build --merge-install
