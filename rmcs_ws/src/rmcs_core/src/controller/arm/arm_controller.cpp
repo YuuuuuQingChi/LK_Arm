@@ -7,7 +7,6 @@
 #include "hardware/fsm/FSM_gold_r.hpp"
 #include "hardware/fsm/FSM_sliver.hpp"
 #include "hardware/fsm/FSM_walk.hpp"
-#include "rmcs_msgs/arm_mode.hpp"
 #include "std_msgs/msg/float32_multi_array.hpp"
 #include <algorithm>
 #include <array>
@@ -61,7 +60,7 @@ public:
     }
     void update() override {
         
-      
+    //   RCLCPP_INFO(this->get_logger(),"%d",*vision_connectation_);
         using namespace rmcs_msgs;
         if (!(*vision_connectation_)) {
             *is_arm_enable   = false;

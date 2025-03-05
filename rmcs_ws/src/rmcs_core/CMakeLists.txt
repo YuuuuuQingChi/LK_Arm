@@ -27,6 +27,7 @@ ament_auto_add_library (
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_SOURCE_DIR}/src)
+include_directories(${PROJECT_SOURCE_DIR}/librmcs)
 
 target_link_libraries(${PROJECT_NAME} -lusb-1.0)
 target_link_libraries(${PROJECT_NAME} ${rosbag2_cpp_LIBRARIES})

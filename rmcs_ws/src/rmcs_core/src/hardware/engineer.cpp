@@ -11,7 +11,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <librmcs/librmcs/client/cboard.hpp>
+#include <cstring>
+#include <librmcs/client/cboard.hpp>
 #include <memory>
 #include <numbers>
 #include <rclcpp/logging.hpp>
@@ -94,9 +95,11 @@ private:
             engineer.register_output("/arm/Joint4/vision", vision_theta4, NAN);
             engineer.register_output("/arm/Joint5/vision", vision_theta5, NAN);
             engineer.register_output("/arm/Joint6/vision", vision_theta6, NAN);
+            engineer.register_output("/arm/customer", vision_connectation, false);
 
             engineer_command.register_input("/arm/enable_flag", is_arm_enable_);
-            engineer_command.register_input("/chassis_and_leg/enable_flag", is_chassis_and_leg_enable_);
+            engineer_command.register_input(
+                "/chassis_and_leg/enable_flag", is_chassis_and_leg_enable_);
 
             using namespace device;
             joint[5].configure_joint(
@@ -141,6 +144,18 @@ private:
             big_yaw.configure(DMMotorConfig{DMMotorType::DM8009});
         }
         ~ArmBoard() final {
+
+            uint64_t command_;
+            command_ = device::LKMotor::lk_close_command();
+
+            transmit_buffer_.add_can1_transmission(0x143, std::bit_cast<uint64_t>(command_));
+            transmit_buffer_.add_can2_transmission(0x146, std::bit_cast<uint64_t>(command_));
+            transmit_buffer_.trigger_transmission();
+            transmit_buffer_.add_can1_transmission(0x142, std::bit_cast<uint64_t>(command_));
+            transmit_buffer_.add_can1_transmission(0x141, std::bit_cast<uint64_t>(command_));
+            transmit_buffer_.add_can2_transmission(0x145, std::bit_cast<uint64_t>(command_));
+            transmit_buffer_.add_can2_transmission(0x144, std::bit_cast<uint64_t>(command_));
+            transmit_buffer_.trigger_transmission();
             stop_handling_events();
             event_thread_.join();
         }
@@ -158,7 +173,7 @@ private:
 
     private:
         void arm_command_update() {
-            auto is_arm_enable = *is_arm_enable_;
+            auto is_arm_enable             = *is_arm_enable_;
             auto is_chassis_and_leg_enable = *is_chassis_and_leg_enable_;
             uint64_t command_;
             int max_count                = 100000;
@@ -270,7 +285,8 @@ private:
             }
 
             if (counter % 2 == 0) {
-                if (is_chassis_and_leg_enable && big_yaw.get_state() != 0 && big_yaw.get_state() != 1) {
+                if (is_chassis_and_leg_enable && big_yaw.get_state() != 0
+                    && big_yaw.get_state() != 1) {
                     command_ = big_yaw.dm_clear_error_command();
                 } else if (!is_chassis_and_leg_enable) {
                     command_ = big_yaw.dm_close_command();
@@ -355,63 +371,83 @@ private:
             dr16_.store_status(uart_data, uart_data_length);
         }
         void uart1_receive_callback(const std::byte* uart_data, uint8_t uart_data_length) override {
-            if (vision.writeable() == 25 && vision.readable() == 39) {
-                vision.clear();
-            }
+
+            // auto fun = [](const std::byte* data, size_t length) {
+            //     std::ostringstream oss;
+
+            //     for (size_t i = 0; i < length; ++i) {
+
+            //         oss << std::hex << std::setw(2) << std::setfill('0')
+            //             << static_cast<int>(std::to_integer<std::uint8_t>(data[i]));
+
+            //         if (i != length - 1) {
+            //             oss << " ";
+            //         }
+            //     }
+
+            //     return oss.str();
+            // };
+
             vision.emplace_back_multi(
                 [&uart_data](std::byte* storage) { *storage = *uart_data++; }, uart_data_length);
 
-            //    if(!(int)*(uart_data) && !(int)*(uart_data + 7))
-            //    RCLCPP_INFO(this->get_logger(),"%x %d",(int)*(uart_data),uart_data_length);
-            // std::byte* byte_ptr = vision.get_byte(0);
             auto* front = vision.front();
-            auto* end   = vision.back();
-            if (uart_data == nullptr) {
-                RCLCPP_INFO(this->get_logger(), "%d", (int)(uart_data_length));
-            }
-            if (front && (int)*front == 0xA5 && vision.readable() >= 39) {
 
-                std::array<std::byte, 4> byte_data;
+            if (front)
+                if (front && (int)*front == 0xA5 && vision.readable() >= 39) {
+                    std::byte rx_data[39];
+                    std::byte* rx_data_ptr = &rx_data[0];
+                    vision.pop_front_multi(
+                        [&rx_data_ptr](std::byte storage) { *rx_data_ptr++ = storage; }, 39);
+                    int16_t command;
+                    rx_data_ptr = &rx_data[0];
+                    command     = *reinterpret_cast<const int16_t*>(rx_data_ptr + 5);
+                    // auto s = fun(rx_data, 39);
+                    //     RCLCPP_INFO(this->get_logger(),"%s  Length: %d  Writeable: %d",s.c_str(),
+                    //     (int)vision.readable(), (int)vision.writeable());
+                    if (command == 0x302) {
+                        // std::memcpy(byte_data.data(), front + 8, 4);
+                        float theta1, theta2, theta3, theta4, theta5, theta6;
+                        uint8_t enable_;
+                        
+                        std::memcpy(&theta1, rx_data_ptr + 8, 4);
+                        std::memcpy(&theta2, rx_data_ptr + 12, 4);
+                        std::memcpy(&theta3, rx_data_ptr + 16, 4);
+                        std::memcpy(&theta4, rx_data_ptr + 20, 4);
+                        std::memcpy(&theta5, rx_data_ptr + 24, 4);
+                        std::memcpy(&theta6, rx_data_ptr + 28, 4);
+                        std::memcpy(&enable_,rx_data_ptr + 32,1);
+                        if (enable_ == 2){
+                         *vision_connectation = false;
+                        }else {
+                            *vision_connectation = true;
 
-                int16_t command;
-                command = *reinterpret_cast<const int16_t*>(front + 5);
-                if (command == 0x302) {
-                    // std::memcpy(byte_data.data(), front + 8, 4);
-                    float theta1, theta2, theta3, theta4, theta5, theta6;
+                        }
+                        
+                        
 
-                    std::memcpy(&theta1, front + 8, 4);
-                    std::memcpy(&theta2, front + 12, 4);
-                    std::memcpy(&theta3, front + 16, 4);
-                    std::memcpy(&theta4, front + 20, 4);
-                    std::memcpy(&theta5, front + 24, 4);
-                    std::memcpy(&theta6, front + 28, 4);
+                        const float epsilon  = 0.000001f;
+                        const float maxValue = 10000.0f;
 
-                    const float epsilon  = 0.000001f;
-                    const float maxValue = 10000.0f;
-
-                    if (!std::isinf(theta1) && fabs(theta1) >= epsilon && fabs(theta1) <= maxValue
-                        && !std::isinf(theta2) && fabs(theta2) >= epsilon
-                        && fabs(theta2) <= maxValue && !std::isinf(theta3)
-                        && fabs(theta3) >= epsilon && fabs(theta3) <= maxValue
-                        && !std::isinf(theta4) && fabs(theta4) >= epsilon
-                        && fabs(theta4) <= maxValue && !std::isinf(theta5)
-                        && fabs(theta5) >= epsilon && fabs(theta5) <= maxValue
-                        && !std::isinf(theta6) && fabs(theta6) >= epsilon
-                        && fabs(theta6) <= maxValue) {
-                        *vision_theta1 = theta1;
-                        *vision_theta2 = theta2;
-                        *vision_theta3 = theta3;
-                        *vision_theta4 = theta4;
-                        *vision_theta5 = theta5;
-                        *vision_theta6 = theta6;
-
-                        RCLCPP_INFO(
-                            this->get_logger(), "%f %f %f %f %f %f ", *vision_theta1,
-                            *vision_theta2, *vision_theta3, *vision_theta4, *vision_theta5,
-                            *vision_theta6);
+                        if (!std::isinf(theta1) && fabs(theta1) >= epsilon
+                            && fabs(theta1) <= maxValue && !std::isinf(theta2)
+                            && fabs(theta2) >= epsilon && fabs(theta2) <= maxValue
+                            && !std::isinf(theta3) && fabs(theta3) >= epsilon
+                            && fabs(theta3) <= maxValue && !std::isinf(theta4)
+                            && fabs(theta4) >= epsilon && fabs(theta4) <= maxValue
+                            && !std::isinf(theta5) && fabs(theta5) >= epsilon
+                            && fabs(theta5) <= maxValue && !std::isinf(theta6)
+                            && fabs(theta6) >= epsilon && fabs(theta6) <= maxValue) {
+                            *vision_theta1 = theta1;
+                            *vision_theta2 = theta2;
+                            *vision_theta3 = theta3;
+                            *vision_theta4 = theta4;
+                            *vision_theta5 = -theta5;
+                            *vision_theta6 = theta6;
+                          
+                        }
                     }
                 }
-            }
         }
 
     private:
@@ -422,6 +458,7 @@ private:
         OutputInterface<double> joint2_error_angle;
         OutputInterface<double> joint1_error_angle;
 
+        OutputInterface<bool> vision_connectation;
         OutputInterface<double> vision_theta1;
         OutputInterface<double> vision_theta2;
         OutputInterface<double> vision_theta3;
@@ -439,7 +476,7 @@ private:
         librmcs::client::CBoard::TransmitBuffer transmit_buffer_;
         std::thread event_thread_;
 
-        librmcs::utility::RingBuffer<std::byte> vision{39};
+        librmcs::utility::RingBuffer<std::byte> vision{256};
         bool last_is_arm_enable_ = true;
 
         device::DMMotor big_yaw;
