@@ -1,4 +1,4 @@
-# RMCS
+# LK_Arm
 RoboMaster Control System based on ROS2.
 1. Set up Docker's apt repository.
 # Add Docker's official GPG key:
@@ -80,18 +80,18 @@ cd /workspaces/rmcs
 source /opt/ros/humble/setup.zsh
 ```
 # ros2包的依赖自动安装
-# cd /path/to/develop_ws/
+cd /path/to/develop_ws/
 ```
 sudo rosdep install --from-paths src --ignore-src -r -y
 sudo apt-get install libusb-1.0-0-dev
 ```
 # ros2包的构建
-# cd /path/to/develop_ws/
+cd /path/to/develop_ws/
 ```
 colcon build --merge-install
 ```
 # 加载ros2包的环境变量
-# cd /path/to/develop_ws/
+cd /path/to/develop_ws/
 ```
 source ./install/setup.zsh
 ```
